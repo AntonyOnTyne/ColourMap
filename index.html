@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f5ef">
+  <title>ColourMap</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="game.js" defer></script>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand" aria-label="ColourMap home">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span>ColourMap</span>
+      </div>
+      <button class="icon-button" id="settings-toggle" type="button" aria-expanded="false" aria-controls="settings-panel" aria-label="Open colour settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm9 4.7v-2.4l-2.1-.6a7.2 7.2 0 0 0-.7-1.7l1.1-1.9-1.7-1.7-1.9 1.1a7.2 7.2 0 0 0-1.7-.7L13.4 3h-2.4l-.6 2.1a7.2 7.2 0 0 0-1.7.7L6.8 4.7 5.1 6.4l1.1 1.9a7.2 7.2 0 0 0-.7 1.7l-2.1.6V13l2.1.6a7.2 7.2 0 0 0 .7 1.7l-1.1 1.9 1.7 1.7 1.9-1.1a7.2 7.2 0 0 0 1.7.7l.6 2.1h2.4l.6-2.1a7.2 7.2 0 0 0 1.7-.7l1.9 1.1 1.7-1.7-1.1-1.9a7.2 7.2 0 0 0 .7-1.7l2.1-.6Z"/></svg>
+      </button>
+    </header>
+
+    <section class="settings-panel" id="settings-panel" hidden aria-labelledby="settings-title">
+      <div class="settings-heading">
+        <div><p class="eyebrow">PERSONALIZE</p><h2 id="settings-title">Your colours</h2></div>
+        <button class="icon-button close-settings" id="settings-close" type="button" aria-label="Close colour settings">×</button>
+      </div>
+      <label class="field-label" for="palette-preset">Palette preset</label>
+      <select id="palette-preset" class="preset-select"></select>
+      <p class="settings-note">Choose eight distinct colours. Your palette applies to the next game.</p>
+      <div class="colour-picker-grid" id="colour-picker-grid"></div>
+    </section>
+
+    <section class="game-card" aria-labelledby="game-title">
+      <div class="intro">
+        <p class="eyebrow">A MEMORY CHALLENGE</p>
+        <h1 id="game-title">ColourMap</h1>
+        <p class="subtitle">Remember the pattern. Rebuild it from memory.</p>
+      </div>
+
+      <div class="mode-picker" id="mode-picker" role="group" aria-label="Choose a game mode">
+        <button class="mode-button is-selected" id="classic-mode-button" type="button" aria-pressed="true">Play Classic Timer</button>
+        <button class="mode-button" id="expert-mode-button" type="button" aria-pressed="false">Play Memory Expert</button>
+      </div>
+
+      <div class="game-info" aria-live="polite">
+        <span class="round-label" id="round-label">READY WHEN YOU ARE</span>
+        <div class="phase-timer" id="phase-timer">—</div>
+        <p class="phase-hint" id="phase-hint">Six tiles. Eight colours. How far can you go?</p>
+      </div>
+
+      <div class="sequence" id="sequence" aria-label="Tile sequence">
+        <div class="sequence-tile" data-slot="0"></div><div class="sequence-tile" data-slot="1"></div>
+        <div class="sequence-tile" data-slot="2"></div><div class="sequence-tile" data-slot="3"></div>
+        <div class="sequence-tile" data-slot="4"></div><div class="sequence-tile" data-slot="5"></div>
+        <div class="sequence-tile" data-slot="6"></div><div class="sequence-tile" data-slot="7"></div>
+        <div class="sequence-tile" data-slot="8"></div><div class="sequence-tile" data-slot="9"></div>
+      </div>
+
+      <div class="palette-area">
+        <p class="palette-label" id="palette-label">COLOUR PALETTE</p>
+        <div class="palette" id="palette" role="group" aria-label="Choose a colour"></div>
+      </div>
+
+      <div class="action-area">
+        <button class="primary-button" id="start-button" type="button">Start game <span aria-hidden="true">→</span></button>
+        <button class="secondary-button" id="continue-button" type="button" hidden>Next round <span aria-hidden="true">→</span></button>
+        <p class="status-message" id="status-message" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section class="result-card" id="result-card" hidden aria-labelledby="result-title">
+      <p class="eyebrow" id="result-kicker">GAME OVER</p>
+      <h2 id="result-title">Your ColourMap</h2>
+      <p class="result-mode" id="result-mode"></p>
+      <div class="stats-grid">
+        <div class="stat"><span class="stat-value" id="result-rounds">0</span><span class="stat-label">Rounds completed</span></div>
+        <div class="stat"><span class="stat-value" id="result-time">00:00.000</span><span class="stat-label">Thinking time</span></div>
+      </div>
+      <div class="answer-review" aria-labelledby="review-heading">
+        <h3 id="review-heading">The pattern and your picks</h3>
+        <div class="review-row"><span class="review-label">Correct pattern</span><div class="review-tiles" id="answer-tiles" aria-label="Correct pattern"></div></div>
+        <div class="review-row"><span class="review-label">Your picks</span><div class="review-tiles" id="guess-tiles" aria-label="Your picks"></div></div>
+        <p class="review-note" id="review-note"></p>
+      </div>
+      <div class="share-card">
+        <p class="share-title">YOUR RESULT</p>
+        <pre class="share-output" id="share-output"></pre>
+      </div>
+      <button class="primary-button" id="copy-button" type="button">Copy result <span aria-hidden="true">▣</span></button>
+      <button class="text-button" id="replay-button" type="button">Play again</button>
+    </section>
+
+    <footer>Take a moment. Trust your memory.</footer>
+  </main>
+</body>
+</html>
