@@ -17,6 +17,12 @@
     "Soft spectrum": [8,18,10,3,14,13,6,15]
   };
   const ROUND_SECONDS = [10,9,8,7,6,5,4,3,2,1];
+  const DAILY_CLASSIC_SEED = 13041969;
+  const DAILY_EXPERT_SEED = 15061965;
+  const MAX_DAILY_ATTEMPTS = 10;
+  const STORAGE_KEY = "colourmap.stats.v1";
+  const ATTEMPT_LOCK = "colourmap.daily-attempt";
+  const MODE_KEYS = ["classic", "expert"];
   const $ = (id) => document.getElementById(id);
   const tiles = [...document.querySelectorAll(".sequence-tile")];
   const paletteNode = $("palette");
@@ -32,15 +38,134 @@
   let guesses = [];
   let finishedReason = "mistake";
   let gameMode = "classic";
+  let gameStartDate = "";
+  let classicNumbers = [];
+  let expertNumbers = [];
+  let gameDailySnapshot = null;
+  let startPending = false;
+  const statsChannel = "BroadcastChannel" in window ? new BroadcastChannel("colourmap.stats.v1") : null;
   const modeNames = { classic: "Classic Timer", expert: "Memory Expert" };
   const modePicker = $("mode-picker");
 
   function formatTime(ms) {
-    const total = Math.max(0, Math.floor(ms));
+    const total = Math.max(0, Math.round(ms));
     const minutes = Math.floor(total / 60000);
     const seconds = Math.floor((total % 60000) / 1000);
     const millis = total % 1000;
     return `${String(minutes).padStart(2,"0")}:${String(seconds).padStart(2,"0")}.${String(millis).padStart(3,"0")}`;
+  }
+  function localDateKey(date = new Date()) {
+    return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+  }
+  function generateNumbers(seed, dateKey = localDateKey()) {
+    const date = BigInt(dateKey.replaceAll("-", ""));
+    const seedValue = BigInt(seed);
+    let value = seedValue * date + seedValue;
+    const results = [];
+    const multiplier = 1103515245n;
+    const increment = 12345n;
+    const modulus = 2147483648n;
+
+    for (let i = 0; i < 10; i++) {
+      value = (value * multiplier + increment) % modulus;
+      results.push(value.toString(8).slice(-6).padStart(6, "0"));
+    }
+
+    return results;
+  }
+  function generateMemoryExpertNumbers(seed, dateKey = localDateKey()) {
+    const date = BigInt(dateKey.replaceAll("-", ""));
+    const seedValue = BigInt(seed);
+    if (seedValue < 0n) throw new Error("Seed must be a non-negative integer");
+    let value = seedValue * date + seedValue;
+    const results = [];
+    const multiplier = 1103515245n;
+    const increment = 12345n;
+    const modulus = 2147483648n;
+
+    for (let length = 1; length <= 10; length++) {
+      value = (value * multiplier + increment) % modulus;
+      results.push(value.toString(8).slice(-length).padStart(length, "0"));
+    }
+
+    return results;
+  }
+  function previousDate(dateKey) {
+    const [year,month,day] = dateKey.split("-").map(Number);
+    const date = new Date(Date.UTC(year, month-1, day-1));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,"0")}-${String(date.getUTCDate()).padStart(2,"0")}`;
+  }
+  function displayDate(dateKey) {
+    const [year,month,day] = dateKey.split("-").map(Number);
+    return new Intl.DateTimeFormat("en-GB", { day:"2-digit", month:"short", year:"numeric" }).format(new Date(year, month-1, day, 12));
+  }
+  function emptyModeStats() { return { lastPlayedDate:null, streak:0, daily:{ date:null, attempts:0, best:null }, bestEver:null }; }
+  function emptyStats() { return { version:1, modes:{ classic:emptyModeStats(), expert:emptyModeStats() } }; }
+  function normalizeScore(score) {
+    if (!score || !Number.isFinite(score.rounds) || !Number.isFinite(score.thinkingMs) || typeof score.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(score.date)) return null;
+    return { rounds:Math.max(0, Math.floor(score.rounds)), thinkingMs:Math.max(0, Math.round(score.thinkingMs)), date:score.date };
+  }
+  function loadStats() {
+    const fallback = emptyStats();
+    try {
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      if (!stored || stored.version !== 1 || !stored.modes) return fallback;
+      MODE_KEYS.forEach((mode) => {
+        const source = stored.modes[mode] || {};
+        const target = fallback.modes[mode];
+        target.lastPlayedDate = typeof source.lastPlayedDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(source.lastPlayedDate) ? source.lastPlayedDate : null;
+        target.streak = Number.isFinite(source.streak) ? Math.max(0, Math.floor(source.streak)) : 0;
+        target.bestEver = normalizeScore(source.bestEver);
+        if (source.daily && typeof source.daily.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(source.daily.date)) {
+          target.daily = {
+            date:source.daily.date,
+            attempts:Number.isFinite(source.daily.attempts) ? Math.max(0, Math.floor(source.daily.attempts)) : 0,
+            best:normalizeScore(source.daily.best)
+          };
+        }
+      });
+      return fallback;
+    } catch { return fallback; }
+  }
+  function saveStats(stats) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(stats)); } catch { /* Keep the game playable when storage is unavailable. */ }
+  }
+  function ensureDailyRecord(modeStats, dateKey) {
+    if (modeStats.daily.date !== dateKey) modeStats.daily = { date:dateKey, attempts:0, best:null };
+  }
+  function recordGameStart(mode, dateKey) {
+    const stats = loadStats();
+    const modeStats = stats.modes[mode];
+    ensureDailyRecord(modeStats, dateKey);
+    if (modeStats.daily.attempts >= MAX_DAILY_ATTEMPTS) return false;
+    modeStats.daily.attempts += 1;
+    if (modeStats.lastPlayedDate !== dateKey) {
+      modeStats.streak = modeStats.lastPlayedDate === previousDate(dateKey) ? modeStats.streak + 1 : 1;
+      modeStats.lastPlayedDate = dateKey;
+    }
+    saveStats(stats);
+    if (statsChannel) statsChannel.postMessage({ type:"attempt-updated" });
+    return true;
+  }
+  async function claimGameAttempt(mode,dateKey) {
+    if (navigator.locks && typeof navigator.locks.request === "function") {
+      return navigator.locks.request(ATTEMPT_LOCK,()=>recordGameStart(mode,dateKey));
+    }
+    return recordGameStart(mode,dateKey);
+  }
+  function scoreIsBetter(candidate, current) {
+    return !current || candidate.rounds > current.rounds || (candidate.rounds === current.rounds && candidate.thinkingMs < current.thinkingMs);
+  }
+  function recordFinishedGame(score) {
+    const stats = loadStats();
+    const modeStats = stats.modes[gameMode];
+    const sameDay=modeStats.daily.date===gameStartDate;
+    const resultDaily=sameDay?modeStats.daily:(gameDailySnapshot?.daily||{date:gameStartDate,attempts:1,best:null});
+    if (scoreIsBetter(score, resultDaily.best)) resultDaily.best = score;
+    if(sameDay)modeStats.daily=resultDaily;
+    if (scoreIsBetter(score, modeStats.bestEver)) modeStats.bestEver = score;
+    saveStats(stats);
+    return {...modeStats,streak:sameDay?modeStats.streak:(gameDailySnapshot?.streak??modeStats.streak),daily:resultDaily};
   }
   function stopTick() { if (tickHandle !== null) { cancelAnimationFrame(tickHandle); clearInterval(tickHandle); tickHandle = null; } }
   function shuffledIndices() {
@@ -60,25 +185,62 @@
   }
   function setTilesBlank() { tiles.forEach((tile) => { tile.style.backgroundColor="";tile.classList.remove("filled","wrong","correct");tile.setAttribute("aria-label","Empty tile"); }); }
   function setMode(mode) {
-    if (phase !== "ready") return;
+    if (phase !== "ready" || startPending || $(`${mode}-mode-button`).disabled) return;
     gameMode = mode;
-    $("classic-mode-button").classList.toggle("is-selected", mode === "classic");
-    $("expert-mode-button").classList.toggle("is-selected", mode === "expert");
-    $("classic-mode-button").setAttribute("aria-pressed", String(mode === "classic"));
-    $("expert-mode-button").setAttribute("aria-pressed", String(mode === "expert"));
-    setPhase("READY WHEN YOU ARE", "—", mode === "classic" ? "Six tiles. Eight colours. How far can you go?" : "Ten rounds. Each round adds another tile.");
+    refreshDailyState();
+  }
+  function refreshDailyState() {
+    const stats=loadStats();
+    const today=localDateKey();
+    let changed=false;
+    MODE_KEYS.forEach((mode)=>{
+      if(stats.modes[mode].daily.date!==today){stats.modes[mode].daily={date:today,attempts:0,best:null};changed=true;}
+    });
+    if(changed)saveStats(stats);
+    const available=MODE_KEYS.filter((mode)=>stats.modes[mode].daily.attempts<MAX_DAILY_ATTEMPTS);
+    MODE_KEYS.forEach((mode)=>{$(`${mode}-mode-button`).disabled=!available.includes(mode);});
+    if(phase==="ready"&&available.length&& !available.includes(gameMode))gameMode=available[0];
+    MODE_KEYS.forEach((mode)=>{
+      const selected=available.length>0&&gameMode===mode;
+      $(`${mode}-mode-button`).classList.toggle("is-selected",selected);
+      $(`${mode}-mode-button`).setAttribute("aria-pressed",String(selected));
+    });
+    const modeStats=stats.modes[gameMode];
+    const attempts=modeStats.daily.attempts;
+    $("mode-attempts").textContent=`${modeNames[gameMode]} attempts today: ${attempts}, ${Math.max(0,MAX_DAILY_ATTEMPTS-attempts)} left.`;
+    const noModesAvailable=available.length===0;
+    $("limit-message").hidden=!noModesAvailable;
+    $("limit-message").textContent="Both game modes have reached today’s 10-attempt limit.\nPlease come back tomorrow.";
+    $("start-button").disabled=noModesAvailable||startPending;
+    if(phase==="ready")setPhase("READY WHEN YOU ARE","—",gameMode==="classic"?"Six tiles. Eight colours. How far can you go?":"Ten rounds. Each round adds another tile.");
+    return stats;
   }
   function updatePaletteDisabled(disabled) { paletteNode.querySelectorAll("button").forEach((button) => { button.disabled=disabled; }); }
   function setPhase(label, timer, hint) { $("round-label").textContent=label;$("phase-timer").textContent=timer;$("phase-hint").textContent=hint; }
 
-  function startGame() {
+  async function startGame() {
+    if(phase!=="ready"||startPending)return;
+    startPending=true;phase="starting";$("start-button").disabled=true;
+    const dateKey=localDateKey();
+    let claimed=false;
+    try { claimed=await claimGameAttempt(gameMode,dateKey); }
+    catch { claimed=recordGameStart(gameMode,dateKey); }
+    if(!claimed){phase="ready";startPending=false;refreshDailyState();return;}
+    gameStartDate=dateKey;
+    classicNumbers=generateNumbers(DAILY_CLASSIC_SEED,gameStartDate);
+    expertNumbers=generateMemoryExpertNumbers(DAILY_EXPERT_SEED,gameStartDate);
+    const startStats=loadStats().modes[gameMode];
+    gameDailySnapshot={streak:startStats.streak,daily:{...startStats.daily,best:startStats.daily.best?{...startStats.daily.best}:null}};
+    startPending=false;
     stopTick(); round=0; completedRounds=0; thinkingMs=0; thinkingStartedAt=0; $("result-card").hidden=true; $("game-title").closest(".game-card").hidden=false;
-    renderPalette();setSettingsLocked(true);modePicker.hidden=true;$("start-button").hidden=true; $("continue-button").hidden=true; $("status-message").textContent=""; beginRound();
+    renderPalette();setSettingsLocked(true);modePicker.hidden=true;$("mode-attempts").hidden=true;$("limit-message").hidden=true;$("start-button").hidden=true; $("continue-button").hidden=true; $("status-message").textContent=""; beginRound();
   }
   function beginRound() {
     round += 1; phase="memorize"; selectedCount=0; guesses=[];
     const sequenceLength = gameMode === "expert" ? round : 6;
-    answer=Array.from({length:sequenceLength},()=>palette[Math.floor(Math.random()*palette.length)]);
+    answer=gameMode === "classic"
+      ? Array.from(classicNumbers[round-1],(digit)=>palette[Number(digit)])
+      : Array.from(expertNumbers[round-1],(digit)=>palette[Number(digit)]);
     updatePaletteDisabled(true); $("palette-label").textContent="COLOUR PALETTE"; $("continue-button").hidden=true; $("status-message").textContent="";
     tiles.forEach((tile,index)=>{tile.hidden=index>=sequenceLength;tile.style.backgroundColor="";tile.classList.remove("filled","wrong","correct");if(index<sequenceLength){tile.style.backgroundColor=COLOURS[answer[index]].hex;tile.classList.add("filled");tile.setAttribute("aria-label",`Sequence tile ${index+1}`);}});
     $("sequence").style.setProperty("--tile-count", sequenceLength);
@@ -114,12 +276,16 @@
     $("result-mode").textContent=modeNames[gameMode];
     $("result-kicker").textContent=reason==="win"?"PERFECT MEMORY":"GAME OVER";
     $("result-title").textContent=reason==="win"?"You mapped every colour.":"That was a close one.";
-    $("result-rounds").textContent=String(completedRounds);$("result-time").textContent=formatTime(thinkingMs);
+    const score={rounds:completedRounds,thinkingMs:Math.max(0,Math.round(thinkingMs)),date:gameStartDate};
+    const modeStats=recordFinishedGame(score);
     renderAnswerReview(reason);
-    $("share-output").textContent=makeShareText();$("copy-button").textContent="Copy result ▣";
+    renderResultSummaries(score,modeStats);
   }
   function renderAnswerReview(reason) {
     const answerNode=$("answer-tiles");const guessNode=$("guess-tiles");answerNode.replaceChildren();guessNode.replaceChildren();
+    answerNode.classList.toggle("expert-review",gameMode === "expert");
+    guessNode.classList.toggle("expert-review",gameMode === "expert");
+    answerNode.closest(".answer-review").classList.toggle("expert-review",gameMode === "expert");
     answer.forEach((colourIndex,index)=>{
       const target=document.createElement("span");target.className="review-tile is-colour";target.style.backgroundColor=COLOURS[colourIndex].hex;target.setAttribute("aria-label",`Correct tile ${index+1}: ${COLOURS[colourIndex].name}`);answerNode.append(target);
       const picked=guesses[index];const guess=document.createElement("span");guess.className="review-tile";
@@ -132,18 +298,36 @@
     $("guess-tiles").style.setProperty("--review-count", answer.length);
     $("review-note").textContent=reason==="mistake"?"The × marks the incorrect pick that ended the game.":`All ${answer.length} picks matched the pattern.`;
   }
-  function makeShareText() {
+  function makeShareText(score,label) {
     const marks=palette.map(i=>COLOURS[i].emoji);
-    const blockCount=gameMode === "expert" ? completedRounds : 6;
-    const blockRow=()=>Array.from({length:blockCount},()=>marks[Math.floor(Math.random()*marks.length)]).join("");
-    const date=new Intl.DateTimeFormat(undefined,{year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
-    return `${blockRow()}\nColourMap ${date}\nMode: ${modeNames[gameMode]}\nRounds Completed: ${completedRounds}\nThinking Time: ${formatTime(thinkingMs)}\n${blockRow()}`;
+    const blockRow=()=>Array.from({length:6},()=>marks[Math.floor(Math.random()*marks.length)]).join("");
+    const date=displayDate(score.date);
+    return `${blockRow()}\nColourMap ${date}\nMode: ${modeNames[gameMode]}\n${label}\nRounds Completed: ${score.rounds}\nThinking Time: ${formatTime(score.thinkingMs)}\n${blockRow()}`;
   }
-  async function copyResult() {
-    const text=$("share-output").textContent;
+  function renderResultSummaries(currentScore,modeStats) {
+    const bestToday=modeStats.daily.best || currentScore;
+    const bestEver=modeStats.bestEver || currentScore;
+    const summaries=[
+      {prefix:"current",score:currentScore,label:"This game"},
+      {prefix:"today",score:bestToday,label:"Best today"},
+      {prefix:"ever",score:bestEver,label:"Best ever"}
+    ];
+    summaries.forEach(({prefix,score,label})=>{
+      $(`${prefix}-result-date`).textContent=displayDate(score.date);
+      $(`${prefix}-result-rounds`).textContent=`${score.rounds} rounds`;
+      $(`${prefix}-result-time`).textContent=formatTime(score.thinkingMs);
+      $(`${prefix}-share-output`).textContent=makeShareText(score,label);
+      $(`copy-${prefix}-button`).textContent=prefix==="current"?"Copy this result":prefix==="today"?"Copy today’s best":"Copy best ever";
+    });
+    const attempts=modeStats.daily.attempts;
+    $("result-attempts").textContent=`${modeNames[gameMode]} attempts today: ${attempts}, ${Math.max(0,MAX_DAILY_ATTEMPTS-attempts)} left.`;
+    $("result-streak").textContent=`${modeNames[gameMode]} daily streak: ${modeStats.streak}`;
+  }
+  async function copyResult(outputId,buttonId) {
+    const text=$(outputId).textContent;
     try { await navigator.clipboard.writeText(text); }
     catch { const area=document.createElement("textarea");area.value=text;area.style.position="fixed";area.style.opacity="0";document.body.append(area);area.select();document.execCommand("copy");area.remove(); }
-    $("copy-button").textContent="Copied ✓";
+    $(buttonId).textContent="Copied ✓";
   }
 
   function initSettings() {
@@ -169,14 +353,27 @@
     if(locked && !$("settings-panel").hidden){$("settings-panel").hidden=true;$("settings-toggle").setAttribute("aria-expanded","false");}
   }
 
+  function scheduleMidnightRefresh() {
+    const now=new Date();
+    const midnight=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1,0,0,100);
+    setTimeout(()=>{
+      refreshDailyState();
+      scheduleMidnightRefresh();
+    },Math.max(1,midnight-now));
+  }
+
   $("start-button").addEventListener("click",startGame);
   $("classic-mode-button").addEventListener("click",()=>setMode("classic"));
   $("expert-mode-button").addEventListener("click",()=>setMode("expert"));
   $("continue-button").addEventListener("click",beginRound);
-  $("replay-button").addEventListener("click",()=>{ $("result-card").hidden=true;$("game-title").closest(".game-card").hidden=false;renderPalette();setTilesBlank();tiles.forEach(tile=>tile.hidden=false);setPhase("READY WHEN YOU ARE","—",gameMode === "classic" ? "Six tiles. Eight colours. How far can you go?" : "Ten rounds. Each round adds another tile.");$("start-button").hidden=false;$("continue-button").hidden=true;modePicker.hidden=false;$("palette-label").textContent="COLOUR PALETTE";updatePaletteDisabled(false);phase="ready"; });
-  $("copy-button").addEventListener("click",copyResult);
+  $("replay-button").addEventListener("click",()=>{ $("result-card").hidden=true;$("game-title").closest(".game-card").hidden=false;renderPalette();setTilesBlank();tiles.forEach((tile,index)=>tile.hidden=index>=6);$("sequence").style.setProperty("--tile-count",6);$("sequence").setAttribute("aria-label","6 tile sequence");$("start-button").hidden=false;$("continue-button").hidden=true;modePicker.hidden=false;$("mode-attempts").hidden=false;$("limit-message").hidden=false;$("palette-label").textContent="COLOUR PALETTE";updatePaletteDisabled(false);phase="ready";refreshDailyState(); });
+  $("copy-current-button").addEventListener("click",()=>copyResult("current-share-output","copy-current-button"));
+  $("copy-today-button").addEventListener("click",()=>copyResult("today-share-output","copy-today-button"));
+  $("copy-ever-button").addEventListener("click",()=>copyResult("ever-share-output","copy-ever-button"));
   const panel=$("settings-panel");const toggle=$("settings-toggle");
   toggle.addEventListener("click",()=>{panel.hidden=!panel.hidden;toggle.setAttribute("aria-expanded",String(!panel.hidden));});
   $("settings-close").addEventListener("click",()=>{panel.hidden=true;toggle.setAttribute("aria-expanded","false");toggle.focus();});
-  initSettings();renderPalette();setTilesBlank();
+  window.addEventListener("storage",(event)=>{if((event.key===STORAGE_KEY||event.key===null)&&phase==="ready")refreshDailyState();});
+  if(statsChannel)statsChannel.addEventListener("message",()=>{if(phase==="ready")refreshDailyState();});
+  initSettings();renderPalette();setTilesBlank();tiles.forEach((tile,index)=>{tile.hidden=index>=6;});refreshDailyState();scheduleMidnightRefresh();
 })();
