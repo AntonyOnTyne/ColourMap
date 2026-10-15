@@ -41,6 +41,7 @@
   let gameStartDate = "";
   let classicNumbers = [];
   let expertNumbers = [];
+  let gameAttemptIndex = 0;
   let gameDailySnapshot = null;
   let startPending = false;
   const statsChannel = "BroadcastChannel" in window ? new BroadcastChannel("colourmap.stats.v1") : null;
@@ -66,9 +67,13 @@
     const increment = 12345n;
     const modulus = 2147483648n;
 
-    for (let i = 0; i < 10; i++) {
-      value = (value * multiplier + increment) % modulus;
-      results.push(value.toString(8).slice(-6).padStart(6, "0"));
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const rounds = [];
+      for (let round = 0; round < 10; round++) {
+        value = (value * multiplier + increment) % modulus;
+        rounds.push(value.toString(8).slice(-6).padStart(6, "0"));
+      }
+      results.push(rounds);
     }
 
     return results;
@@ -83,9 +88,13 @@
     const increment = 12345n;
     const modulus = 2147483648n;
 
-    for (let length = 1; length <= 10; length++) {
-      value = (value * multiplier + increment) % modulus;
-      results.push(value.toString(8).slice(-length).padStart(length, "0"));
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const rounds = [];
+      for (let length = 1; length <= 10; length++) {
+        value = (value * multiplier + increment) % modulus;
+        rounds.push(value.toString(8).slice(-length).padStart(length, "0"));
+      }
+      results.push(rounds);
     }
 
     return results;
@@ -137,7 +146,7 @@
     const stats = loadStats();
     const modeStats = stats.modes[mode];
     ensureDailyRecord(modeStats, dateKey);
-    if (modeStats.daily.attempts >= MAX_DAILY_ATTEMPTS) return false;
+    if (modeStats.daily.attempts >= MAX_DAILY_ATTEMPTS) return null;
     modeStats.daily.attempts += 1;
     if (modeStats.lastPlayedDate !== dateKey) {
       modeStats.streak = modeStats.lastPlayedDate === previousDate(dateKey) ? modeStats.streak + 1 : 1;
@@ -145,7 +154,7 @@
     }
     saveStats(stats);
     if (statsChannel) statsChannel.postMessage({ type:"attempt-updated" });
-    return true;
+    return modeStats.daily.attempts;
   }
   async function claimGameAttempt(mode,dateKey) {
     if (navigator.locks && typeof navigator.locks.request === "function") {
@@ -222,11 +231,12 @@
     if(phase!=="ready"||startPending)return;
     startPending=true;phase="starting";$("start-button").disabled=true;
     const dateKey=localDateKey();
-    let claimed=false;
-    try { claimed=await claimGameAttempt(gameMode,dateKey); }
-    catch { claimed=recordGameStart(gameMode,dateKey); }
-    if(!claimed){phase="ready";startPending=false;refreshDailyState();return;}
+    let attemptNumber=null;
+    try { attemptNumber=await claimGameAttempt(gameMode,dateKey); }
+    catch { attemptNumber=recordGameStart(gameMode,dateKey); }
+    if(!attemptNumber){phase="ready";startPending=false;refreshDailyState();return;}
     gameStartDate=dateKey;
+    gameAttemptIndex=attemptNumber-1;
     classicNumbers=generateNumbers(DAILY_CLASSIC_SEED,gameStartDate);
     expertNumbers=generateMemoryExpertNumbers(DAILY_EXPERT_SEED,gameStartDate);
     const startStats=loadStats().modes[gameMode];
@@ -239,8 +249,8 @@
     round += 1; phase="memorize"; selectedCount=0; guesses=[];
     const sequenceLength = gameMode === "expert" ? round : 6;
     answer=gameMode === "classic"
-      ? Array.from(classicNumbers[round-1],(digit)=>palette[Number(digit)])
-      : Array.from(expertNumbers[round-1],(digit)=>palette[Number(digit)]);
+      ? Array.from(classicNumbers[gameAttemptIndex][round-1],(digit)=>palette[Number(digit)])
+      : Array.from(expertNumbers[gameAttemptIndex][round-1],(digit)=>palette[Number(digit)]);
     updatePaletteDisabled(true); $("palette-label").textContent="COLOUR PALETTE"; $("continue-button").hidden=true; $("status-message").textContent="";
     tiles.forEach((tile,index)=>{tile.hidden=index>=sequenceLength;tile.style.backgroundColor="";tile.classList.remove("filled","wrong","correct");if(index<sequenceLength){tile.style.backgroundColor=COLOURS[answer[index]].hex;tile.classList.add("filled");tile.setAttribute("aria-label",`Sequence tile ${index+1}`);}});
     $("sequence").style.setProperty("--tile-count", sequenceLength);
