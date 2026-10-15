@@ -108,6 +108,11 @@
     const [year,month,day] = dateKey.split("-").map(Number);
     return new Intl.DateTimeFormat("en-GB", { day:"2-digit", month:"short", year:"numeric" }).format(new Date(year, month-1, day, 12));
   }
+  function displayShareDate(dateKey) {
+    const [year,month,day] = dateKey.split("-").map(Number);
+    const monthName = new Intl.DateTimeFormat("en-GB", { month:"short" }).format(new Date(year, month-1, 1));
+    return `${String(day).padStart(2,"0")}-${monthName}-${String(year).padStart(4,"0")}`;
+  }
   function emptyModeStats() { return { lastPlayedDate:null, streak:0, daily:{ date:null, attempts:0, best:null }, bestEver:null }; }
   function emptyStats() { return { version:1, modes:{ classic:emptyModeStats(), expert:emptyModeStats() } }; }
   function normalizeScore(score) {
@@ -311,16 +316,15 @@
   function makeShareText(score,label) {
     const marks=palette.map(i=>COLOURS[i].emoji);
     const blockRow=()=>Array.from({length:6},()=>marks[Math.floor(Math.random()*marks.length)]).join("");
-    const date=displayDate(score.date);
-    return `${blockRow()}\nColourMap ${date}\nMode: ${modeNames[gameMode]}\n${label}\nRounds Completed: ${score.rounds}\nThinking Time: ${formatTime(score.thinkingMs)}\n${blockRow()}`;
+    return `${blockRow()}\nColourMap\n${modeNames[gameMode]}\n${label}\n${displayShareDate(score.date)}\nRounds ${score.rounds}\nTime ${formatTime(score.thinkingMs)}\n${blockRow()}`;
   }
   function renderResultSummaries(currentScore,modeStats) {
     const bestToday=modeStats.daily.best || currentScore;
     const bestEver=modeStats.bestEver || currentScore;
     const summaries=[
-      {prefix:"current",score:currentScore,label:"This game"},
-      {prefix:"today",score:bestToday,label:"Best today"},
-      {prefix:"ever",score:bestEver,label:"Best ever"}
+      {prefix:"current",score:currentScore,label:"Last Go"},
+      {prefix:"today",score:bestToday,label:"Best Today"},
+      {prefix:"ever",score:bestEver,label:"Best Ever"}
     ];
     summaries.forEach(({prefix,score,label})=>{
       $(`${prefix}-result-date`).textContent=displayDate(score.date);
