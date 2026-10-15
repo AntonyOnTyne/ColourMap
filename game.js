@@ -113,7 +113,7 @@
     const monthName = new Intl.DateTimeFormat("en-GB", { month:"short" }).format(new Date(year, month-1, 1));
     return `${String(day).padStart(2,"0")}-${monthName}-${String(year).padStart(4,"0")}`;
   }
-  function emptyModeStats() { return { lastPlayedDate:null, streak:0, daily:{ date:null, attempts:0, best:null }, bestEver:null }; }
+  function emptyModeStats() { return { lastPlayedDate:null, streak:0, daily:{ date:null, attempts:0, best:null }, bestEver:null, completedGames:0 }; }
   function emptyStats() { return { version:1, modes:{ classic:emptyModeStats(), expert:emptyModeStats() } }; }
   function normalizeScore(score) {
     if (!score || !Number.isFinite(score.rounds) || !Number.isFinite(score.thinkingMs) || typeof score.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(score.date)) return null;
@@ -124,12 +124,15 @@
     try {
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
       if (!stored || stored.version !== 1 || !stored.modes) return fallback;
+      let migrated = false;
       MODE_KEYS.forEach((mode) => {
         const source = stored.modes[mode] || {};
         const target = fallback.modes[mode];
         target.lastPlayedDate = typeof source.lastPlayedDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(source.lastPlayedDate) ? source.lastPlayedDate : null;
         target.streak = Number.isFinite(source.streak) ? Math.max(0, Math.floor(source.streak)) : 0;
         target.bestEver = normalizeScore(source.bestEver);
+        target.completedGames = Number.isFinite(source.completedGames) ? Math.max(0, Math.floor(source.completedGames)) : 0;
+        if (!Number.isFinite(source.completedGames)) migrated = true;
         if (source.daily && typeof source.daily.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(source.daily.date)) {
           target.daily = {
             date:source.daily.date,
@@ -138,6 +141,7 @@
           };
         }
       });
+      if (migrated) saveStats(fallback);
       return fallback;
     } catch { return fallback; }
   }
@@ -178,6 +182,7 @@
     if (scoreIsBetter(score, resultDaily.best)) resultDaily.best = score;
     if(sameDay)modeStats.daily=resultDaily;
     if (scoreIsBetter(score, modeStats.bestEver)) modeStats.bestEver = score;
+    if (finishedReason === "win") modeStats.completedGames += 1;
     saveStats(stats);
     return {...modeStats,streak:sameDay?modeStats.streak:(gameDailySnapshot?.streak??modeStats.streak),daily:resultDaily};
   }
@@ -336,6 +341,7 @@
     const attempts=modeStats.daily.attempts;
     $("result-attempts").textContent=`${modeNames[gameMode]} attempts today: ${attempts}, ${Math.max(0,MAX_DAILY_ATTEMPTS-attempts)} left.`;
     $("result-streak").textContent=`${modeNames[gameMode]} daily streak: ${modeStats.streak}`;
+    $("result-completions").textContent=`${modeNames[gameMode]} fully completed: ${modeStats.completedGames}`;
   }
   async function copyResult(outputId,buttonId) {
     const text=$(outputId).textContent;
