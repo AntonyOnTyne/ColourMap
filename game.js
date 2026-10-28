@@ -143,11 +143,19 @@
   const DAILY_EXPERT_SEED = 15061965;
   const MAX_DAILY_ATTEMPTS = 10;
   const STORAGE_KEY = "colourmap.stats.v1";
+  const HAPTICS_STORAGE_KEY = "colourmap.haptics.enabled.v1";
+  const HAPTIC_PATTERNS = {
+    pick: 12,
+    wrong: [35,35,70],
+    round: [18,35,18],
+    win: [22,45,35,45,70]
+  };
   const ATTEMPT_LOCK = "colourmap.daily-attempt";
   const MODE_KEYS = ["classic", "expert"];
   const $ = (id) => document.getElementById(id);
   const tiles = [...document.querySelectorAll(".sequence-tile")];
   const paletteNode = $("palette");
+  let hapticsEnabled = loadHapticsPreference();
   let palette = PRESETS.Classic.slice();
   let answer = [];
   let round = 0;
@@ -155,6 +163,7 @@
   let thinkingMs = 0;
   let thinkingStartedAt = 0;
   let phase = "ready";
+  let pinchHandlersAttached = false;
   let tickHandle = null;
   let selectedCount = 0;
   let guesses = [];
@@ -171,6 +180,8 @@
   const modePicker = $("mode-picker");
   const statsPanel = $("stats-panel");
   const statsToggle = $("stats-toggle");
+  const instructionsPanel = $("instructions-panel");
+  const instructionsToggle = $("instructions-toggle");
 
   function formatTime(ms) {
     const total = Math.max(0, Math.round(ms));
@@ -178,6 +189,19 @@
     const seconds = Math.floor((total % 60000) / 1000);
     const millis = total % 1000;
     return `${String(minutes).padStart(2,"0")}:${String(seconds).padStart(2,"0")}.${String(millis).padStart(3,"0")}`;
+  }
+  function loadHapticsPreference() {
+    try {
+      const stored = localStorage.getItem(HAPTICS_STORAGE_KEY);
+      return stored === null ? true : stored === "true";
+    } catch { return true; }
+  }
+  function saveHapticsPreference() {
+    try { localStorage.setItem(HAPTICS_STORAGE_KEY, String(hapticsEnabled)); } catch { /* Haptics remain available for this visit. */ }
+  }
+  function playHaptic(patternName) {
+    if (!hapticsEnabled || typeof navigator.vibrate !== "function") return;
+    try { navigator.vibrate(HAPTIC_PATTERNS[patternName]); } catch { /* Unsupported or blocked vibration must not affect play. */ }
   }
   function localDateKey(date = new Date()) {
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
@@ -270,6 +294,12 @@
       if (migrated) saveStats(fallback);
       return fallback;
     } catch { return fallback; }
+  }
+  function hasPlayedOnDevice(stats) {
+    return MODE_KEYS.some((mode) => {
+      const modeStats = stats.modes[mode];
+      return Boolean(modeStats.lastPlayedDate || modeStats.daily.attempts > 0 || modeStats.lastGame || modeStats.bestEver || modeStats.completedGames > 0);
+    });
   }
   function saveStats(stats) {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(stats)); } catch { /* Keep the game playable when storage is unavailable. */ }
@@ -418,12 +448,15 @@
     if(colourIndex!==answer[slot]) { tile.classList.add("wrong"); finishGame("mistake"); return; }
     tile.classList.add("correct");
     if(selectedCount===answer.length) { completedRounds=round;thinkingMs+=performance.now()-thinkingStartedAt;thinkingStartedAt=0;stopTick();if(round===10)finishGame("win");else prepareNextRound(); }
+    else playHaptic("pick");
   }
   function prepareNextRound() {
+    playHaptic("round");
     phase="between";syncStatsToggle();updatePaletteDisabled(true);setPhase(`ROUND ${round} COMPLETE`,formatTime(thinkingMs),"Your thinking time is paused.");$("phase-hint").textContent="Take a breath, then continue when you’re ready.";$("continue-button").hidden=false;$("status-message").textContent="";
   }
   function finishGame(reason) {
     if(phase==="ended") return;
+    playHaptic(reason==="win"?"win":"wrong");
     if(phase==="playing" && thinkingStartedAt) thinkingMs+=performance.now()-thinkingStartedAt;
     stopTick();phase="ended";syncStatsToggle();finishedReason=reason;updatePaletteDisabled(true);setSettingsLocked(false);$("game-title").closest(".game-card").hidden=true;
     const result=$("result-card");result.hidden=false;
@@ -547,12 +580,63 @@
     const canOpen=phase==="ready"||phase==="ended";
     statsToggle.disabled=!canOpen;
     if(!canOpen)closeStatsPanel();
+    syncInstructionsToggle();
+    syncGameplayTouchAction();
+  }
+  function isGameplayActive() {
+    return phase==="starting"||phase==="memorize"||phase==="playing"||phase==="between";
+  }
+  function preventMultiTouchZoom(event) {
+    if(isGameplayActive()&&event.touches&&event.touches.length>1&&event.cancelable)event.preventDefault();
+  }
+  function preventSafariGestureZoom(event) {
+    if(isGameplayActive()&&event.cancelable)event.preventDefault();
+  }
+  function syncGameplayTouchAction() {
+    const active=isGameplayActive();
+    document.documentElement.classList.toggle("gameplay-active",active);
+    if(active&&!pinchHandlersAttached) {
+      document.addEventListener("touchmove",preventMultiTouchZoom,{passive:false});
+      document.addEventListener("gesturestart",preventSafariGestureZoom,{passive:false});
+      document.addEventListener("gesturechange",preventSafariGestureZoom,{passive:false});
+      pinchHandlersAttached=true;
+    } else if(!active&&pinchHandlersAttached) {
+      document.removeEventListener("touchmove",preventMultiTouchZoom);
+      document.removeEventListener("gesturestart",preventSafariGestureZoom);
+      document.removeEventListener("gesturechange",preventSafariGestureZoom);
+      pinchHandlersAttached=false;
+    }
+  }
+  function closeInstructionsPanel(restoreFocus=false) {
+    if(instructionsPanel.hidden)return;
+    instructionsPanel.hidden=true;
+    instructionsToggle.setAttribute("aria-expanded","false");
+    if(restoreFocus)instructionsToggle.focus();
+  }
+  function syncInstructionsToggle() {
+    const canOpen=phase==="ready"||phase==="ended";
+    instructionsToggle.disabled=!canOpen;
+    if(!canOpen)closeInstructionsPanel();
+  }
+  function openInstructionsPanel() {
+    closeStatsPanel();
+    $("settings-panel").hidden=true;
+    $("settings-toggle").setAttribute("aria-expanded","false");
+    instructionsPanel.hidden=false;
+    instructionsToggle.setAttribute("aria-expanded","true");
   }
 
   function initSettings() {
     const presetSelect=$("palette-preset");
     Object.keys(PRESETS).forEach((name)=>{const option=document.createElement("option");option.value=name;option.textContent=name;presetSelect.append(option);});
     const grid=$("colour-picker-grid");
+    const hapticToggle=$("haptic-feedback-toggle");
+    const hapticNote=$("haptic-feedback-note");
+    const hapticsSupported=typeof navigator.vibrate==="function";
+    hapticToggle.checked=hapticsEnabled&&hapticsSupported;
+    hapticToggle.disabled=!hapticsSupported;
+    if(!hapticsSupported)hapticNote.textContent="This browser does not support device vibration.";
+    hapticToggle.addEventListener("change",()=>{hapticsEnabled=hapticToggle.checked;saveHapticsPreference();});
     for(let slot=0;slot<8;slot++) {
       const wrapper=document.createElement("label");wrapper.className="colour-choice";wrapper.append(Object.assign(document.createElement("span"),{className:"choice-swatch"}));
       const select=document.createElement("select");select.setAttribute("aria-label",`Colour for palette position ${slot+1}`);select.dataset.slot=String(slot);
@@ -569,6 +653,7 @@
   function setSettingsLocked(locked) {
     $("settings-toggle").disabled=locked;
     $("palette-preset").disabled=locked;
+    $("haptic-feedback-toggle").disabled=locked||typeof navigator.vibrate!=="function";
     $("colour-picker-grid").querySelectorAll("select").forEach((select)=>{select.disabled=locked;});
     if(locked && !$("settings-panel").hidden){$("settings-panel").hidden=true;$("settings-toggle").setAttribute("aria-expanded","false");}
   }
@@ -592,12 +677,19 @@
   $("copy-today-button").addEventListener("click",()=>copyResult("today-share-output","copy-today-button"));
   $("copy-ever-button").addEventListener("click",()=>copyResult("ever-share-output","copy-ever-button"));
   const panel=$("settings-panel");const toggle=$("settings-toggle");
-  toggle.addEventListener("click",()=>{closeStatsPanel();panel.hidden=!panel.hidden;toggle.setAttribute("aria-expanded",String(!panel.hidden));});
+  toggle.addEventListener("click",()=>{closeStatsPanel();closeInstructionsPanel();panel.hidden=!panel.hidden;toggle.setAttribute("aria-expanded",String(!panel.hidden));});
   $("settings-close").addEventListener("click",()=>{panel.hidden=true;toggle.setAttribute("aria-expanded","false");toggle.focus();});
+  instructionsToggle.addEventListener("click",()=>{
+    if(instructionsToggle.disabled)return;
+    if(!instructionsPanel.hidden){closeInstructionsPanel();return;}
+    openInstructionsPanel();
+  });
+  $("instructions-close").addEventListener("click",()=>closeInstructionsPanel(true));
   statsToggle.addEventListener("click",()=>{
     if(statsToggle.disabled)return;
     if(!statsPanel.hidden){closeStatsPanel();return;}
     panel.hidden=true;toggle.setAttribute("aria-expanded","false");
+    closeInstructionsPanel();
     refreshDailyState();
     renderStatsPanel();
     statsPanel.hidden=false;statsToggle.setAttribute("aria-expanded","true");
@@ -605,6 +697,7 @@
   $("stats-close").addEventListener("click",()=>closeStatsPanel(true));
   window.addEventListener("keydown",(event)=>{
     if(event.key!=="Escape")return;
+    if(!instructionsPanel.hidden)closeInstructionsPanel(true);
     if(!statsPanel.hidden)closeStatsPanel(true);
     if(!panel.hidden){panel.hidden=true;toggle.setAttribute("aria-expanded","false");toggle.focus();}
   });
@@ -615,5 +708,8 @@
   };
   window.addEventListener("storage",(event)=>{if(event.key===STORAGE_KEY||event.key===null)refreshStatsViews();});
   if(statsChannel)statsChannel.addEventListener("message",refreshStatsViews);
-  initSettings();renderPalette();setTilesBlank();tiles.forEach((tile,index)=>{tile.hidden=index>=6;});refreshDailyState();scheduleMidnightRefresh();
+  initSettings();renderPalette();setTilesBlank();tiles.forEach((tile,index)=>{tile.hidden=index>=6;});
+  const initialStats=refreshDailyState();
+  if(!hasPlayedOnDevice(initialStats))openInstructionsPanel();
+  scheduleMidnightRefresh();
 })();

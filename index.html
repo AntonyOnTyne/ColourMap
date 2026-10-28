@@ -16,6 +16,9 @@
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
         <span>ColourMap</span>
       </div>
+      <button class="icon-button" id="instructions-toggle" type="button" aria-expanded="false" aria-controls="instructions-panel" aria-label="Open instructions">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9.7 9a2.4 2.4 0 1 1 4 1.8c-1.1.8-1.7 1.3-1.7 2.7M12 17.1h.01" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></svg>
+      </button>
       <button class="icon-button" id="stats-toggle" type="button" aria-expanded="false" aria-controls="stats-panel" aria-label="Open game statistics" disabled>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16M7 15l4-4 3 3 6-7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></svg>
       </button>
@@ -23,6 +26,50 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm9 4.7v-2.4l-2.1-.6a7.2 7.2 0 0 0-.7-1.7l1.1-1.9-1.7-1.7-1.9 1.1a7.2 7.2 0 0 0-1.7-.7L13.4 3h-2.4l-.6 2.1a7.2 7.2 0 0 0-1.7.7L6.8 4.7 5.1 6.4l1.1 1.9a7.2 7.2 0 0 0-.7 1.7l-2.1.6V13l2.1.6a7.2 7.2 0 0 0 .7 1.7l-1.1 1.9 1.7 1.7 1.9-1.1a7.2 7.2 0 0 0 1.7.7l.6 2.1h2.4l.6-2.1a7.2 7.2 0 0 0 1.7-.7l1.9 1.1 1.7-1.7-1.1-1.9a7.2 7.2 0 0 0 .7-1.7l2.1-.6Z"/></svg>
       </button>
     </header>
+
+    <section class="stats-panel instructions-panel" id="instructions-panel" hidden role="dialog" aria-modal="false" aria-labelledby="instructions-title">
+      <div class="settings-heading">
+        <div><p class="eyebrow">HOW TO PLAY</p><h2 id="instructions-title">ColourMap instructions</h2></div>
+        <button class="icon-button close-settings" id="instructions-close" type="button" aria-label="Close instructions">×</button>
+      </div>
+      <div class="instructions-content">
+        <p class="instructions-intro">In both games, watch the colour sequence, then rebuild it from memory using the palette.</p>
+        <div class="stats-modes instructions-modes">
+          <section class="stats-mode" aria-labelledby="instructions-expert-title">
+            <h3 id="instructions-expert-title">Memory Expert</h3>
+            <ul>
+              <li>Play ten rounds. The sequence grows by one tile each round, from one tile to ten.</li>
+              <li>You have five seconds to memorize the colours and their order in every round.</li>
+              <li>Choose the matching colours from the palette in the same order.</li>
+            </ul>
+          </section>
+          <section class="stats-mode" aria-labelledby="instructions-classic-title">
+            <h3 id="instructions-classic-title">Classic Timer</h3>
+            <ul>
+              <li>Play ten rounds, with six tiles in every sequence.</li>
+              <li>Memorization time decreases by one second each round, from ten seconds in round one to one second in round ten.</li>
+              <li>Choose all six matching colours from the palette in the same order.</li>
+            </ul>
+          </section>
+          <section class="stats-mode" aria-labelledby="instructions-rules-title">
+            <h3 id="instructions-rules-title">For both games</h3>
+            <ul>
+              <li>When memorization ends, the sequence is hidden. Fill it from left to right by selecting palette colours.</li>
+              <li>Every choice is final. A wrong colour ends the game immediately.</li>
+              <li>Your thinking time adds up across rounds. It pauses during memorization and between rounds.</li>
+              <li>Complete all ten rounds to win.</li>
+            </ul>
+          </section>
+          <section class="stats-mode" aria-labelledby="instructions-records-title">
+            <h3 id="instructions-records-title">Daily attempts and stats</h3>
+            <ul>
+              <li>You can start up to ten games per mode each local calendar day.</li>
+              <li>Your attempts, scores, streaks, and stats are saved on this device and do not sync to other devices.</li>
+            </ul>
+          </section>
+        </div>
+      </div>
+    </section>
 
     <section class="settings-panel" id="settings-panel" hidden aria-labelledby="settings-title">
       <div class="settings-heading">
@@ -32,6 +79,11 @@
       <label class="field-label" for="palette-preset">Palette preset</label>
       <select id="palette-preset" class="preset-select"></select>
       <p class="settings-note">Choose eight distinct colours. Your palette applies to the next game.</p>
+      <div class="haptics-option">
+        <label for="haptic-feedback-toggle">Haptic feedback</label>
+        <input id="haptic-feedback-toggle" type="checkbox" checked aria-describedby="haptic-feedback-note">
+      </div>
+      <p class="settings-note haptics-note" id="haptic-feedback-note">Brief vibrations respond to your picks and round results when your browser and device support them.</p>
       <div class="colour-picker-grid" id="colour-picker-grid"></div>
     </section>
 
@@ -108,6 +160,7 @@
         <div class="review-row"><span class="review-label">Your picks</span><div class="review-tiles" id="guess-tiles" aria-label="Your picks"></div></div>
         <p class="review-note" id="review-note"></p>
       </div>
+      <button class="primary-button" id="replay-button" type="button">Play again <span aria-hidden="true">→</span></button>
       <div class="share-card">
         <p class="share-title">YOUR RESULT</p>
         <div class="result-summaries" id="result-summaries">
@@ -137,10 +190,9 @@
         <p class="daily-stats" id="result-streak"></p>
         <p class="daily-stats" id="result-completions"></p>
       </div>
-      <button class="text-button" id="replay-button" type="button">Play again</button>
     </section>
 
-    <footer>Take a moment. Trust your memory.<span class="version-number">Version v0.16</span></footer>
+    <footer>Take a moment. Trust your memory.<span class="version-number">Version v0.22</span></footer>
   </main>
 </body>
 </html>
