@@ -402,6 +402,7 @@
 
   async function startGame() {
     if(phase!=="ready"||startPending)return;
+    playHaptic("pick");
     startPending=true;phase="starting";$("start-button").disabled=true;syncStatsToggle();
     setSettingsLocked(true);
     const dateKey=localDateKey();
@@ -671,8 +672,8 @@
   $("start-button").addEventListener("click",startGame);
   $("classic-mode-button").addEventListener("click",()=>setMode("classic"));
   $("expert-mode-button").addEventListener("click",()=>setMode("expert"));
-  $("continue-button").addEventListener("click",beginRound);
-  $("replay-button").addEventListener("click",()=>{ $("result-card").hidden=true;$("game-title").closest(".game-card").hidden=false;renderPalette();setTilesBlank();tiles.forEach((tile,index)=>tile.hidden=index>=6);$("sequence").style.setProperty("--tile-count",6);$("sequence").setAttribute("aria-label","6 tile sequence");$("start-button").hidden=false;$("continue-button").hidden=true;modePicker.hidden=false;$("mode-attempts").hidden=false;$("limit-message").hidden=false;$("palette-label").textContent="COLOUR PALETTE";updatePaletteDisabled(false);phase="ready";refreshDailyState(); });
+  $("continue-button").addEventListener("click",()=>{if(phase!=="between")return;playHaptic("pick");beginRound();});
+  $("replay-button").addEventListener("click",()=>{if(phase!=="ended")return;playHaptic("pick");$("result-card").hidden=true;$("game-title").closest(".game-card").hidden=false;renderPalette();setTilesBlank();tiles.forEach((tile,index)=>tile.hidden=index>=6);$("sequence").style.setProperty("--tile-count",6);$("sequence").setAttribute("aria-label","6 tile sequence");$("start-button").hidden=false;$("continue-button").hidden=true;modePicker.hidden=false;$("mode-attempts").hidden=false;$("limit-message").hidden=false;$("palette-label").textContent="COLOUR PALETTE";updatePaletteDisabled(false);phase="ready";refreshDailyState(); });
   $("copy-current-button").addEventListener("click",()=>copyResult("current-share-output","copy-current-button"));
   $("copy-today-button").addEventListener("click",()=>copyResult("today-share-output","copy-today-button"));
   $("copy-ever-button").addEventListener("click",()=>copyResult("ever-share-output","copy-ever-button"));
