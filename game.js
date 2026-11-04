@@ -393,17 +393,18 @@
     $("limit-message").hidden=!noModesAvailable;
     $("limit-message").textContent="Both game modes have reached today’s 10-attempt limit.\nPlease come back tomorrow.";
     $("start-button").disabled=noModesAvailable||startPending;
-    if(phase==="ready")setPhase("READY WHEN YOU ARE","—",gameMode==="classic"?"Six tiles. Eight colours. How far can you go?":"Ten rounds. Each round adds another tile.");
+    if(phase==="ready")setPhase("","",gameMode==="classic"?"Six tiles. Eight colours. How far can you go?":"Ten rounds. Each round adds another tile.");
     syncStatsToggle();
     return stats;
   }
   function updatePaletteDisabled(disabled) { paletteNode.querySelectorAll("button").forEach((button) => { button.disabled=disabled; }); }
-  function setPhase(label, timer, hint) { $("round-label").textContent=label;$("phase-timer").textContent=timer;$("phase-hint").textContent=hint; }
+  function syncGameInfoLayout() { $("game-info").classList.toggle("is-ready",phase==="ready"||phase==="starting"); }
+  function setPhase(label, timer, hint) { syncGameInfoLayout();$("round-label").textContent=label;$("phase-timer").textContent=timer;$("phase-hint").textContent=hint; }
 
   async function startGame() {
     if(phase!=="ready"||startPending)return;
     playHaptic("pick");
-    startPending=true;phase="starting";$("start-button").disabled=true;syncStatsToggle();
+    startPending=true;phase="starting";syncGameInfoLayout();$("start-button").disabled=true;syncStatsToggle();
     setSettingsLocked(true);
     const dateKey=localDateKey();
     let attemptNumber=null;
