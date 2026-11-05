@@ -422,7 +422,7 @@
     renderPalette();setSettingsLocked(true);modePicker.hidden=true;$("mode-attempts").hidden=true;$("limit-message").hidden=true;$("start-button").hidden=true; $("continue-button").hidden=true; $("status-message").textContent=""; beginRound();
   }
   function beginRound() {
-    round += 1; phase="memorize"; selectedCount=0; guesses=[];syncStatsToggle();
+    round += 1; phase="memorise"; selectedCount=0; guesses=[];syncStatsToggle();
     const sequenceLength = gameMode === "expert" ? round : 6;
     answer=gameMode === "classic"
       ? Array.from(classicNumbers[gameAttemptIndex][round-1],(digit)=>palette[Number(digit)])
@@ -432,7 +432,7 @@
     $("sequence").style.setProperty("--tile-count", sequenceLength);
     $("sequence").setAttribute("aria-label",`${sequenceLength} tile sequence`);
     const duration=(gameMode === "expert" ? 5 : ROUND_SECONDS[round-1])*1000; const end=performance.now()+duration;
-    setPhase(`ROUND ${round} OF 10`,"", "Memorize the colours and their order.");
+    setPhase(`ROUND ${round} OF 10`,"", "Memorise the colours and their order.");
     stopTick();
     const update=()=>{const remaining=Math.max(0,end-performance.now());$("phase-timer").textContent=`${(remaining/1000).toFixed(3)} s`;if(remaining<=0){stopTick();startPlayPhase();}};
     update(); tickHandle=setInterval(update,16);
@@ -586,7 +586,7 @@
     syncGameplayTouchAction();
   }
   function isGameplayActive() {
-    return phase==="starting"||phase==="memorize"||phase==="playing"||phase==="between";
+    return phase==="starting"||phase==="memorise"||phase==="playing"||phase==="between";
   }
   function preventMultiTouchZoom(event) {
     if(isGameplayActive()&&event.touches&&event.touches.length>1&&event.cancelable)event.preventDefault();
